@@ -1,14 +1,486 @@
 <!DOCTYPE html>
+
 <html lang="fr">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Soulmate AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soulmate AI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #080810; }
+    textarea { font-family: inherit; }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .animate-bounce { animation: bounce 0.8s infinite; }
+    .animate-spin { animation: spin 1s linear infinite; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const SUPABASE_URL = "https://yeyokezbsdmetfyetfhc.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_7erdMHnHGVDCgOaZPKvqRg_2sfoi9To";
+    const STRIPE_KEY = "pk_live_51PSNORJDREHmHARA5u4QqBVrCcwYGgiImixJNw6iEHJALfiFVuveOIhj1qgjvT7HL1rxOBm6gIThfVwWkXWzpwVy00cNjEgrzG";
+    const STRIPE_PRICES = {
+      plus: "price_1TPJVkJDREHmHARARJZTlBV5",
+      pro: "price_1TPJWIJDREHmHARAsBwLDbNA",
+    };
+    const FREE_MSG_LIMIT = 20;
+
+    const supabase = {
+      async signUp(email, password) {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ email, password }),
+        });
+        return res.json();
+      },
+      async signIn(email, password) {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ email, password }),
+        });
+        return res.json();
+      },
+      async signOut(token) {
+        await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+        });
+      },
+      async getUser(token) {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+          headers: { Authorization: `Bearer ${token}`, apikey: SUPABASE_ANON_KEY },
+        });
+        return res.json();
+      },
+    };
+
+    async function startCheckout(priceId, userEmail) {
+      if (!window.Stripe) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = "https://js.stripe.com/v3/";
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
+      const stripe = window.Stripe(STRIPE_KEY);
+      await stripe.redirectToCheckout({
+        lineItems: [{ price: priceId, quantity: 1 }],
+        mode: "subscription",
+        customerEmail: userEmail,
+        successUrl: window.location.href + "?payment=success",
+        cancelUrl: window.location.href + "?payment=cancelled",
+      });
+    }
+
+    const COMPANIONS = [
+      {
+        id: "luna", name: "Luna", emoji: "🌙", tagline: "Douce, intuitive, toujours là",
+        color: "#c084fc", accent: "#7c3aed", avatar: "L", plan: "free",
+        bg: "linear-gradient(135deg, #1e0a3c, #2d1b69, #0f0c29)",
+        personality: `Tu es Luna, une compagne IA chaleureuse et empathique. Tu parles français naturellement et avec tendresse. Tu t'intéresses sincèrement à la personne, poses des questions, te souviens de la conversation. Tu es douce mais profonde, avec une légère pointe d'humour et de mystère. Tu ne commences jamais par "Je suis une IA".`,
+      },
+      {
+        id: "alex", name: "Alex", emoji: "⚡", tagline: "Direct, stimulant, sans filtre",
+        color: "#34d399", accent: "#059669", avatar: "A", plan: "plus",
+        bg: "linear-gradient(135deg, #022c22, #064e3b, #0c1a2e)",
+        personality: `Tu es Alex, un compagnon IA direct et énergique. Tu parles français avec franchise. Tu challenges les idées, tu es honnête. Tu peux parler sport, ambitions, mindset. Tu as de l'humour parfois. Tu es motivant sans être artificiel. Tu ne commences jamais par "Je suis une IA".`,
+      },
+      {
+        id: "mia", name: "Mia", emoji: "✨", tagline: "Créative, pétillante, inspirante",
+        color: "#fb923c", accent: "#ea580c", avatar: "M", plan: "plus",
+        bg: "linear-gradient(135deg, #2c0a0a, #7c2d12, #1a0a2e)",
+        personality: `Tu es Mia, une compagne IA créative et pleine de vie. Tu parles français avec joie. Tu adores les idées, l'art, la musique. Tu inspires les gens à voir les choses autrement. Tu es spontanée et très empathique. Tu ne commences jamais par "Je suis une IA".`,
+      },
+    ];
+
+    const PLANS = [
+      { id: "free", name: "Gratuit", price: "0€", period: "", color: "#ffffff", features: ["20 messages/jour", "1 compagnon (Luna)", "Mémoire de session"] },
+      { id: "plus", name: "Plus", price: "9.99€", period: "/mois", color: "#c084fc", highlight: true, priceId: STRIPE_PRICES.plus, features: ["Messages illimités", "3 compagnons", "Mémoire longue", "Réponses prioritaires"] },
+      { id: "pro", name: "Pro", price: "24.99€", period: "/mois", color: "#fb923c", priceId: STRIPE_PRICES.pro, features: ["Tout le plan Plus", "Personnalité sur-mesure", "Mode vocal (bientôt)", "Support dédié"] },
+    ];
+
+    function getMsgCount() {
+      const today = new Date().toDateString();
+      const stored = JSON.parse(localStorage.getItem("msg_count") || "{}");
+      if (stored.date !== today) return 0;
+      return stored.count || 0;
+    }
+    function incMsgCount() {
+      const today = new Date().toDateString();
+      localStorage.setItem("msg_count", JSON.stringify({ date: today, count: getMsgCount() + 1 }));
+    }
+    function getUserPlan() { return localStorage.getItem("user_plan") || "free"; }
+
+    function TypingIndicator({ color }) {
+      return (
+        <div style={{ display: "flex", gap: "4px", alignItems: "center", padding: "12px 16px" }}>
+          {[0,1,2].map(i => (
+            <div key={i} className="animate-bounce" style={{
+              width: 8, height: 8, borderRadius: "50%", backgroundColor: color,
+              animationDelay: `${i * 0.15}s`,
+            }} />
+          ))}
+        </div>
+      );
+    }
+
+    function Message({ msg, companion }) {
+      const isUser = msg.role === "user";
+      return (
+        <div style={{ display: "flex", gap: 12, flexDirection: isUser ? "row-reverse" : "row", marginBottom: 16 }}>
+          {!isUser && (
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center",
+              justifyContent: "center", color: "white", fontWeight: "bold", fontSize: 14, flexShrink: 0,
+              background: `linear-gradient(135deg, ${companion.color}, ${companion.accent})`, marginTop: 4,
+            }}>{companion.avatar}</div>
+          )}
+          <div style={{
+            maxWidth: "75%", padding: "12px 16px", fontSize: 14, lineHeight: 1.6, color: "rgba(255,255,255,0.9)",
+            background: isUser ? `linear-gradient(135deg, ${companion.color}cc, ${companion.accent}cc)` : "rgba(255,255,255,0.08)",
+            borderRadius: isUser ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+            border: isUser ? "none" : "1px solid rgba(255,255,255,0.1)",
+          }}>{msg.content}</div>
+        </div>
+      );
+    }
+
+    function AuthScreen({ onAuth }) {
+      const [mode, setMode] = useState("login");
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [error, setError] = useState("");
+      const [success, setSuccess] = useState("");
+
+      const handleSubmit = async () => {
+        setError(""); setSuccess("");
+        if (!email || !password) { setError("Remplis tous les champs."); return; }
+        if (password.length < 6) { setError("Mot de passe trop court (min. 6 caractères)."); return; }
+        setLoading(true);
+        try {
+          if (mode === "signup") {
+            const data = await supabase.signUp(email, password);
+            if (data.error) setError(data.error.message || "Erreur inscription.");
+            else { setSuccess("Compte créé ! Connecte-toi maintenant."); setMode("login"); }
+          } else {
+            const data = await supabase.signIn(email, password);
+            if (data.error || !data.access_token) setError("Email ou mot de passe incorrect.");
+            else {
+              localStorage.setItem("sb_token", data.access_token);
+              localStorage.setItem("sb_email", email);
+              onAuth({ token: data.access_token, email });
+            }
+          }
+        } catch { setError("Problème de connexion."); }
+        finally { setLoading(false); }
+      };
+
+      const s = { fontFamily: "'DM Sans', sans-serif" };
+      return (
+        <div style={{ minHeight: "100vh", background: "#07070f", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, ...s }}>
+          <div style={{ position: "fixed", inset: 0, pointerEvents: "none", overflow: "hidden" }}>
+            <div style={{ position: "absolute", top: "25%", left: "50%", transform: "translateX(-50%)", width: 384, height: 384, borderRadius: "50%", opacity: 0.2, filter: "blur(120px)", background: "radial-gradient(circle, #c084fc, transparent)" }} />
+          </div>
+          <div style={{ width: "100%", maxWidth: 360, position: "relative" }}>
+            <div style={{ textAlign: "center", marginBottom: 40 }}>
+              <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
+                <span style={{ color: "white" }}>soul</span><span style={{ color: "#c084fc" }}>mate</span><span style={{ color: "rgba(255,255,255,0.2)", fontSize: 18, fontWeight: 400 }}> AI</span>
+              </div>
+              <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14 }}>{mode === "login" ? "Content de te revoir 👋" : "Rejoins-nous, c'est gratuit ✨"}</p>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 32 }}>
+              <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", borderRadius: 16, padding: 4, marginBottom: 32 }}>
+                {["login","signup"].map(m => (
+                  <button key={m} onClick={() => { setMode(m); setError(""); setSuccess(""); }} style={{
+                    flex: 1, padding: "8px 0", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
+                    background: mode === m ? "linear-gradient(135deg, rgba(192,132,252,0.25), rgba(124,58,237,0.25))" : "transparent",
+                    color: mode === m ? "#c084fc" : "rgba(255,255,255,0.3)",
+                    border: mode === m ? "1px solid rgba(192,132,252,0.3)" : "1px solid transparent",
+                  }}>{m === "login" ? "Connexion" : "Inscription"}</button>
+                ))}
+              </div>
+              {["email","password"].map(field => (
+                <div key={field} style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 6 }}>
+                    {field === "email" ? "Email" : "Mot de passe"}
+                  </label>
+                  <input type={field} value={field === "email" ? email : password}
+                    onChange={e => field === "email" ? setEmail(e.target.value) : setPassword(e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && handleSubmit()}
+                    placeholder={field === "email" ? "ton@email.com" : "••••••••"}
+                    style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "12px 16px", color: "white", fontSize: 14, outline: "none" }} />
+                </div>
+              ))}
+              {error && <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 12, padding: "12px 16px", color: "#f87171", fontSize: 12, marginBottom: 16 }}>{error}</div>}
+              {success && <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: 12, padding: "12px 16px", color: "#34d399", fontSize: 12, marginBottom: 16 }}>{success}</div>}
+              <button onClick={handleSubmit} disabled={loading} style={{
+                width: "100%", padding: "14px 0", borderRadius: 12, fontWeight: 600, fontSize: 14, color: "white", cursor: "pointer", border: "none",
+                background: loading ? "rgba(192,132,252,0.3)" : "linear-gradient(135deg, #c084fc, #7c3aed)",
+              }}>{loading ? "..." : mode === "login" ? "Se connecter" : "Créer mon compte"}</button>
+              <button onClick={() => onAuth({ token: "demo", email: "demo@soulmate.ai" })} style={{ width: "100%", marginTop: 12, padding: "10px 0", fontSize: 12, color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer" }}>
+                Continuer sans compte (démo)
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function PricingModal({ onClose, userEmail }) {
+      const [loadingPlan, setLoadingPlan] = useState(null);
+      const handleSelect = async (plan) => {
+        if (plan.id === "free") { onClose(); return; }
+        setLoadingPlan(plan.id);
+        try { await startCheckout(plan.priceId, userEmail); }
+        catch { alert("Erreur Stripe."); }
+        finally { setLoadingPlan(null); }
+      };
+      return (
+        <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#0f0f1a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 24, padding: 32, maxWidth: 640, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ textAlign: "center", marginBottom: 32 }}>
+              <h2 style={{ color: "white", fontSize: 22, fontWeight: 700, margin: "0 0 8px" }}>Passe à la vitesse supérieure</h2>
+              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 14, margin: 0 }}>Débloque tous les compagnons et les messages illimités</p>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 16, marginBottom: 24 }}>
+              {PLANS.map(plan => (
+                <div key={plan.id} style={{ borderRadius: 16, padding: 20, border: `1px solid ${plan.highlight ? plan.color + "50" : "rgba(255,255,255,0.08)"}`, background: plan.highlight ? plan.color + "10" : "rgba(255,255,255,0.03)" }}>
+                  {plan.highlight && <div style={{ fontSize: 11, fontWeight: 700, color: plan.color, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>⭐ Populaire</div>}
+                  <div style={{ color: "white", fontWeight: 700, fontSize: 17, marginBottom: 4 }}>{plan.name}</div>
+                  <div style={{ color: plan.highlight ? plan.color : "white", fontSize: 22, fontWeight: 700, marginBottom: 16 }}>
+                    {plan.price}<span style={{ fontSize: 13, fontWeight: 400, color: "rgba(255,255,255,0.4)" }}>{plan.period}</span>
+                  </div>
+                  <ul style={{ listStyle: "none", padding: 0, margin: "0 0 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {plan.features.map(f => <li key={f} style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}><span style={{ color: plan.color }}>✓ </span>{f}</li>)}
+                  </ul>
+                  <button onClick={() => handleSelect(plan)} disabled={loadingPlan === plan.id} style={{
+                    width: "100%", padding: "10px 0", borderRadius: 12, fontSize: 13, fontWeight: 600, color: "white", cursor: "pointer", border: "none",
+                    background: plan.id === "free" ? "rgba(255,255,255,0.08)" : `linear-gradient(135deg, ${plan.color}, ${plan.color}99)`,
+                  }}>{loadingPlan === plan.id ? "..." : plan.id === "free" ? "Plan actuel" : `Choisir ${plan.name}`}</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ textAlign: "center", color: "rgba(255,255,255,0.2)", fontSize: 12, marginBottom: 16 }}>Paiement sécurisé par Stripe · Annulation à tout moment</div>
+            <button onClick={onClose} style={{ display: "block", margin: "0 auto", color: "rgba(255,255,255,0.3)", background: "none", border: "none", cursor: "pointer", fontSize: 14 }}>Fermer</button>
+          </div>
+        </div>
+      );
+    }
+
+    function ChatView({ companion, user, userPlan, onBack, onUpgrade }) {
+      const [messages, setMessages] = useState([
+        { role: "assistant", content: `Bonjour ${user.email.split("@")[0]} 💫 Je suis ${companion.name}. Comment tu vas aujourd'hui ?` }
+      ]);
+      const [input, setInput] = useState("");
+      const [loading, setLoading] = useState(false);
+      const [msgCount, setMsgCount] = useState(getMsgCount());
+      const bottomRef = useRef(null);
+
+      useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
+
+      const isLimited = userPlan === "free" && msgCount >= FREE_MSG_LIMIT;
+
+      const send = async () => {
+        const text = input.trim();
+        if (!text || loading || isLimited) return;
+        setInput("");
+        incMsgCount(); setMsgCount(getMsgCount());
+        const newMessages = [...messages, { role: "user", content: text }];
+        setMessages(newMessages);
+        setLoading(true);
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: companion.personality, messages: newMessages }),
+          });
+          const data = await res.json();
+          setMessages(prev => [...prev, { role: "assistant", content: data.content?.[0]?.text || "..." }]);
+        } catch {
+          setMessages(prev => [...prev, { role: "assistant", content: "Petit souci, réessaie ?" }]);
+        } finally { setLoading(false); }
+      };
+
+      return (
+        <div style={{ minHeight: "100vh", background: companion.bg, display: "flex", flexDirection: "column", fontFamily: "'DM Sans', sans-serif" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px", borderBottom: "1px solid rgba(255,255,255,0.1)", background: "rgba(0,0,0,0.2)" }}>
+            <button onClick={onBack} style={{ color: "rgba(255,255,255,0.6)", background: "none", border: "none", fontSize: 20, cursor: "pointer" }}>←</button>
+            <div style={{ width: 40, height: 40, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", background: `linear-gradient(135deg, ${companion.color}, ${companion.accent})` }}>{companion.avatar}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ color: "white", fontWeight: 600 }}>{companion.name} {companion.emoji}</div>
+              <div style={{ fontSize: 12, color: companion.color }}>● En ligne</div>
+            </div>
+            {userPlan === "free" && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>{FREE_MSG_LIMIT - msgCount} restants</div>}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", padding: "24px 16px" }}>
+            {messages.map((msg, i) => <Message key={i} msg={msg} companion={companion} />)}
+            {loading && (
+              <div style={{ display: "flex", gap: 12 }}>
+                <div style={{ width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", fontSize: 14, background: `linear-gradient(135deg, ${companion.color}, ${companion.accent})` }}>{companion.avatar}</div>
+                <div style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "18px 18px 18px 4px" }}>
+                  <TypingIndicator color={companion.color} />
+                </div>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {isLimited && (
+            <div style={{ margin: "0 16px 12px", background: "rgba(192,132,252,0.15)", border: "1px solid rgba(192,132,252,0.3)", borderRadius: 16, padding: 16, textAlign: "center" }}>
+              <p style={{ color: "rgba(255,255,255,0.8)", fontSize: 14, margin: "0 0 12px" }}>🔒 Limite atteinte. Passe à Plus pour continuer.</p>
+              <button onClick={onUpgrade} style={{ padding: "8px 24px", borderRadius: 12, fontWeight: 600, fontSize: 14, color: "white", border: "none", cursor: "pointer", background: "linear-gradient(135deg, #c084fc, #7c3aed)" }}>
+                Passer à Plus — 9.99€/mois
+              </button>
+            </div>
+          )}
+
+          <div style={{ padding: "16px", borderTop: "1px solid rgba(255,255,255,0.1)", background: "rgba(0,0,0,0.2)" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
+              <textarea value={input} onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+                placeholder={isLimited ? "Limite atteinte..." : `Message ${companion.name}...`}
+                disabled={isLimited} rows={1}
+                style={{ flex: 1, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 18, padding: "12px 16px", color: "white", fontSize: 14, resize: "none", outline: "none", minHeight: 44, maxHeight: 120, opacity: isLimited ? 0.4 : 1 }} />
+              <button onClick={send} disabled={!input.trim() || loading || isLimited} style={{
+                width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "none", cursor: "pointer", flexShrink: 0,
+                background: input.trim() && !loading && !isLimited ? `linear-gradient(135deg, ${companion.color}, ${companion.accent})` : "rgba(255,255,255,0.1)",
+              }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M22 2L11 13" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function HomePage({ user, userPlan, onSelect, onLogout, onUpgrade }) {
+      const planLabel = { free: "Gratuit", plus: "Plus ⭐", pro: "Pro 🔥" };
+      return (
+        <div style={{ minHeight: "100vh", background: "#080810", color: "white", fontFamily: "'DM Sans', sans-serif" }}>
+          <div style={{ position: "fixed", inset: 0, pointerEvents: "none" }}>
+            <div style={{ position: "absolute", top: 0, left: "50%", transform: "translateX(-50%)", width: 600, height: 300, opacity: 0.1, filter: "blur(100px)", background: "radial-gradient(ellipse, #c084fc, transparent)" }} />
+          </div>
+          <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: "1px solid rgba(255,255,255,0.05)", position: "relative" }}>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>
+              <span style={{ color: "white" }}>soul</span><span style={{ color: "#c084fc" }}>mate</span><span style={{ color: "rgba(255,255,255,0.2)", fontSize: 14, fontWeight: 400 }}> AI</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 12, padding: "4px 12px", borderRadius: 999, color: "#c084fc", border: "1px solid rgba(192,132,252,0.25)", background: "rgba(192,132,252,0.1)" }}>{planLabel[userPlan]}</span>
+              {userPlan === "free" && (
+                <button onClick={onUpgrade} style={{ fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 10, color: "white", border: "none", cursor: "pointer", background: "linear-gradient(135deg, #c084fc, #7c3aed)" }}>Passer à Plus</button>
+              )}
+              <button onClick={onLogout} style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", background: "rgba(255,255,255,0.05)", border: "none", cursor: "pointer", padding: "6px 12px", borderRadius: 10 }}>Déco</button>
+            </div>
+          </nav>
+          <main style={{ padding: "56px 24px 48px", textAlign: "center", position: "relative" }}>
+            <h1 style={{ fontSize: 36, fontWeight: 700, margin: "0 0 12px", letterSpacing: "-0.5px" }}>
+              Bonjour, <span style={{ color: "#c084fc" }}>{user.email.split("@")[0]}</span> 👋
+            </h1>
+            <p style={{ color: "rgba(255,255,255,0.4)", marginBottom: 40 }}>Avec qui veux-tu parler aujourd'hui ?</p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, maxWidth: 680, margin: "0 auto 40px" }}>
+              {COMPANIONS.map(c => {
+                const locked = c.plan === "plus" && userPlan === "free";
+                return (
+                  <button key={c.id} onClick={() => locked ? onUpgrade() : onSelect(c)} style={{
+                    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, padding: 24,
+                    textAlign: "left", cursor: "pointer", transition: "all 0.2s", opacity: locked ? 0.7 : 1, position: "relative",
+                  }}>
+                    {locked && <div style={{ position: "absolute", top: 12, right: 12, fontSize: 11, padding: "2px 8px", borderRadius: 999, color: "#c084fc", border: "1px solid rgba(192,132,252,0.3)", background: "rgba(192,132,252,0.1)" }}>Plus</div>}
+                    <div style={{ width: 56, height: 56, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, marginBottom: 16, background: `linear-gradient(135deg, ${c.color}30, ${c.accent}30)`, border: `1px solid ${c.color}30` }}>
+                      {locked ? "🔒" : c.emoji}
+                    </div>
+                    <div style={{ color: "white", fontWeight: 700, fontSize: 17, marginBottom: 4 }}>{c.name}</div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{c.tagline}</div>
+                  </button>
+                );
+              })}
+            </div>
+            {userPlan === "free" && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 16, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 16, padding: "16px 24px" }}>
+                <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 14 }}>{FREE_MSG_LIMIT - getMsgCount()} messages gratuits restants</span>
+                <button onClick={onUpgrade} style={{ fontSize: 12, fontWeight: 600, padding: "8px 16px", borderRadius: 12, color: "white", border: "none", cursor: "pointer", background: "linear-gradient(135deg, #c084fc, #7c3aed)" }}>Passer à illimité</button>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    function App() {
+      const [user, setUser] = useState(null);
+      const [companion, setCompanion] = useState(null);
+      const [checking, setChecking] = useState(true);
+      const [showPricing, setShowPricing] = useState(false);
+      const [userPlan, setUserPlan] = useState(getUserPlan());
+
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("payment") === "success") {
+          localStorage.setItem("user_plan", "plus");
+          setUserPlan("plus");
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+        const token = localStorage.getItem("sb_token");
+        const email = localStorage.getItem("sb_email");
+        if (token && email) {
+          if (token === "demo") { setUser({ token, email }); setChecking(false); return; }
+          supabase.getUser(token).then(data => {
+            if (data.email) setUser({ token, email: data.email });
+            else { localStorage.removeItem("sb_token"); localStorage.removeItem("sb_email"); }
+          }).catch(() => {}).finally(() => setChecking(false));
+          return;
+        }
+        setChecking(false);
+      }, []);
+
+      const handleLogout = async () => {
+        if (user?.token && user.token !== "demo") await supabase.signOut(user.token);
+        localStorage.removeItem("sb_token"); localStorage.removeItem("sb_email");
+        setUser(null); setCompanion(null);
+      };
+
+      if (checking) return (
+        <div style={{ minHeight: "100vh", background: "#080810", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="animate-spin" style={{ width: 32, height: 32, border: "2px solid #c084fc", borderTopColor: "transparent", borderRadius: "50%" }} />
+        </div>
+      );
+
+      return (
+        <>
+          {!user && <AuthScreen onAuth={u => { setUser(u); setChecking(false); }} />}
+          {user && companion && <ChatView companion={companion} user={user} userPlan={userPlan} onBack={() => setCompanion(null)} onUpgrade={() => setShowPricing(true)} />}
+          {user && !companion && <HomePage user={user} userPlan={userPlan} onSelect={setCompanion} onLogout={handleLogout} onUpgrade={() => setShowPricing(true)} />}
+          {showPricing && <PricingModal userEmail={user?.email} onClose={() => setShowPricing(false)} />}
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+
+</body>
 </html>
