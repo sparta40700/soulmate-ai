@@ -33,11 +33,7 @@
 
     const SUPABASE_URL = "https://yeyokezbsdmetfyetfhc.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_7erdMHnHGVDCgOaZPKvqRg_2sfoi9To";
-    const STRIPE_KEY = "pk_live_51PSNORJDREHmHARA5u4QqBVrCcwYGgiImixJNw6iEHJALfiFVuveOIhj1qgjvT7HL1rxOBm6gIThfVwWkXWzpwVy00cNjEgrzG";
-    const STRIPE_PRICES = {
-      plus: "price_1TPJVkJDREHmHARARJZTlBV5",
-      pro: "price_1TPJWIJDREHmHARAsBwLDbNA",
-    };
+    const STRIPE_LINKS = { plus: "https://buy.stripe.com/bJe4gAaTkeyOdIj87fbQY01", pro: "https://buy.stripe.com/cNi8wQ1iK76maw7cnvbQY02" };
     const FREE_MSG_LIMIT = 20;
 
     const supabase = {
@@ -71,24 +67,9 @@
       },
     };
 
-    async function startCheckout(priceId, userEmail) {
-      if (!window.Stripe) {
-        await new Promise((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = "https://js.stripe.com/v3/";
-          script.onload = resolve;
-          script.onerror = reject;
-          document.head.appendChild(script);
-        });
-      }
-      const stripe = window.Stripe(STRIPE_KEY);
-      await stripe.redirectToCheckout({
-        lineItems: [{ price: priceId, quantity: 1 }],
-        mode: "subscription",
-        customerEmail: userEmail,
-        successUrl: window.location.href + "?payment=success",
-        cancelUrl: window.location.href + "?payment=cancelled",
-      });
+    function startCheckout(planId) {
+      const link = STRIPE_LINKS[planId];
+      if (link) window.location.href = link + "?prefilled_email=" + encodeURIComponent("");
     }
 
     const COMPANIONS = [
@@ -248,12 +229,9 @@
 
     function PricingModal({ onClose, userEmail }) {
       const [loadingPlan, setLoadingPlan] = useState(null);
-      const handleSelect = async (plan) => {
+      const handleSelect = (plan) => {
         if (plan.id === "free") { onClose(); return; }
-        setLoadingPlan(plan.id);
-        try { await startCheckout(plan.priceId, userEmail); }
-        catch { alert("Erreur Stripe."); }
-        finally { setLoadingPlan(null); }
+        startCheckout(plan.id);
       };
       return (
         <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
